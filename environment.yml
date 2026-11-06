@@ -1,0 +1,39 @@
+name: state_entropy_robust_rl
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.9
+  - pip=24.0
+  - numpy=1.24.4
+  - scipy
+  - pandas
+  - matplotlib
+  - tqdm
+  - pillow
+  - pyyaml
+
+  - pip:
+      # ---- Minigrid_robust_ent ----
+      # gym must stay below 0.26: the code uses env.seed() and the 4-tuple step().
+      - gym==0.22.0
+      - gym-minigrid==1.0.3
+      - minigrid==3.0.0
+      - pygame==2.6.1
+      - tensorboardX==2.6.5
+      - scikit-image==0.22.0
+      # opencv-python 5.x requires NumPy 2, which Gym < 0.26 cannot work with
+      - opencv-python==4.8.1.78
+      - array2gif==1.0.4
+      - -e ./Minigrid_robust_ent/torch-ac
+
+      # ---- Mujoco_robust_ent ----
+      - gymnasium==0.28.1
+      - mujoco==2.3.3
+      - tyro==0.5.10
+      - tensorboard==2.16.2
+
+      # ---- Shared ----
+      - torch==2.5.1
+      - wandb==0.16.6
