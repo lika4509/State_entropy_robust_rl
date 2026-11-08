@@ -13,6 +13,8 @@ dependencies:
   - tqdm
   - pillow
   - pyyaml
+  # mujoco 2.3.3 needs the cffi C-extension backend at runtime
+  - cffi
 
   - pip:
       # ---- Minigrid_robust_ent ----
