@@ -4,15 +4,18 @@ configs=(
 )
 max_parallel=1
 count=0
-# 
+#
 for seed in 1; do
   for config in "${configs[@]}"; do
     eval $config
     echo "Running: seed=$seed, num_envs $num_envs"
-    python3 lstm_continuous_action_ppo.py \
+    python3 -u lstm_continuous_action_ppo.py \
       --seed $seed \
       --ent_coef $ent_coef \
       --starting_beta $starting_beta \
+      --num_envs 128 \
+      --num_steps 200 \
+      --network_hidden_size 512 \
       --save_dir $save_dir \
       --beta $beta &
     ((count++))
@@ -21,7 +24,7 @@ for seed in 1; do
     fi
   done
 done
-python3 Eval_pusher_wall.py \
+python3 -u Eval_pusher_wall.py \
   --seed $seed \
   --ent_coef $ent_coef \
   --starting_beta $starting_beta \
