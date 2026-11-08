@@ -33,6 +33,7 @@ dependencies:
       # ---- Mujoco_robust_ent ----
       - gymnasium==0.28.1
       - mujoco==2.3.3
+      - imageio
       - tyro==0.5.10
       - tensorboard==2.16.2
 
