@@ -168,7 +168,8 @@ if __name__ == "__main__":
                     df.loc[len(df)] = [f"beta:{conf['beta']}_alpha:{conf['ent_coef']}", seed, avg_reward, avg_distance,wall,avg_success]
 
 
-    df.to_csv('pusher_wall_alpha.csv', index=False)
+    os.makedirs(args.load_dir, exist_ok=True)
+    df.to_csv(os.path.join(args.load_dir, 'pusher_wall_alpha.csv'), index=False)
    
     #print average success rate for wall and no wall:
     wall_success = df[df['wall'] == True]['success'].mean()

@@ -1,6 +1,6 @@
 
 configs=(
-  "beta=160.0 starting_beta=800.0 ent_coef=0.01 save_dir=pusher_puck"
+  "beta=160.0 starting_beta=800.0 ent_coef=0.01 save_dir=$HOME/data/mj_results/pusher_puck"
 )
 max_parallel=1
 count=0

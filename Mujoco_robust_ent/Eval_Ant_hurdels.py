@@ -173,5 +173,6 @@ if __name__ == "__main__":
                 df.loc[len(df)] = [f"beta:{conf['beta']}_alpha:{conf['ent_coef']}_starting_beta{conf['starting_beta']}", seed, avg_reward, avg_distance, avg_hurdles, hurdels]
 
 
-    df.to_csv('ant_all_rewards_hurdels_hard_25.csv', index=False)
+    os.makedirs(args.load_dir, exist_ok=True)
+    df.to_csv(os.path.join(args.load_dir, 'ant_all_rewards_hurdels_hard_25.csv'), index=False)
    

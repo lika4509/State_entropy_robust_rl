@@ -50,7 +50,7 @@ pip install wandb
 
 ```
 cd State_entropy_robust_rl/Minigrid_robust_ent
-bash run_a2c.sh
+WANDB_MODE=disabled bash run_a2c.sh
 ```
 This script trains and evaluates three variants:
 

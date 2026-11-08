@@ -164,7 +164,8 @@ if __name__ == "__main__":
                     df.loc[len(df)] = [f"beta:{conf['beta']}_alpha:{conf['ent_coef']}", seed, avg_reward, avg_distance,radius,avg_success]
 
 
-    df.to_csv('pusher_radius_alpha_more.csv', index=False)
+    os.makedirs(args.load_dir, exist_ok=True)
+    df.to_csv(os.path.join(args.load_dir, 'pusher_radius_alpha_more.csv'), index=False)
    
     #print average success rate for radius and no radius:
     radius_success = df[df['radius'] == True]['success'].mean()
