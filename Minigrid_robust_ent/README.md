@@ -6,6 +6,14 @@ available at https://sites.google.com/view/rl-vcse
 
 (note we do not use the value conditioning in our experiments)
 
+# Hopefully the all we have to do
+```
+conda env create -f environment.yml
+conda activate state_entropy_robust_rl
+```
+
+If this works, skip to [Reproducing our main results](#reproducing-our-main-results)
+
 ## Installation
 Please install below packages in a following order:
 
@@ -49,6 +57,10 @@ pip install wandb
 ## Reproducing our main results
 
 ```
+export RL_STORAGE="/home/renku/work/data/rl_logs"
+export WANDB_MODE=disabled
+export WANDB_DIR="/home/renku/work/data/wandb"
+
 cd State_entropy_robust_rl/Minigrid_robust_ent
 WANDB_MODE=disabled bash run_a2c.sh
 ```
