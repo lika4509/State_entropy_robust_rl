@@ -13,9 +13,6 @@ for seed in 1; do
       --seed $seed \
       --ent_coef $ent_coef \
       --starting_beta $starting_beta \
-      --num_envs 128 \
-      --num_steps 200 \
-      --network_hidden_size 512 \
       --save_dir $save_dir \
       --beta $beta &
     ((count++))
