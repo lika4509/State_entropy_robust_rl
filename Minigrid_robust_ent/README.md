@@ -1,75 +1,70 @@
 # Minigrid robust state entropy experiments
 
-This repo is based on the paper: Maximum Value-Conditional State Entropy Exploration for Sample-Efficient Deep Reinforcement Learning 
+This repo is based on the paper: *Maximum Value-Conditional State Entropy Exploration for Sample-Efficient Deep Reinforcement Learning*, available at https://sites.google.com/view/rl-vcse.
 
-available at https://sites.google.com/view/rl-vcse
+(We do **not** use value conditioning in our experiments.)
 
-(note we do not use the value conditioning in our experiments)
+## Installation
 
-# Hopefully the all we have to do
-```
+The single `environment.yml` at the **repository root** installs everything for both Minigrid and MuJoCo. Run it from the repo root so the relative `torch-ac` path resolves:
+
+```bash
+cd ..                                  # repo root: State_entropy_robust_rl/
 conda env create -f environment.yml
 conda activate state_entropy_robust_rl
 ```
 
-If this works, skip to [Reproducing our main results](#reproducing-our-main-results)
+This creates the `state_entropy_robust_rl` env (Python 3.9), installs `torch-ac` in editable mode from `./Minigrid_robust_ent/torch-ac`, and brings in `gym` (legacy pre-0.26 API), `minigrid`, `gym-minigrid`, `tensorboardX`, `scikit-image`, `pygame`, `array2gif`, and `wandb`, plus all MuJoCo deps. The earlier manual steps (separate `requirements.txt`, cloning Minigrid, `pip install -e torch-ac`) are now baked into the env file and no longer needed.
 
-## Installation
-Please install below packages in a following order:
-
-### rl-starter-files
-
-```
-cd Minigrid_robust_rl
-conda env create -f environment.yml
-conda activate vcse_env
-cd rl-starter-files/rl-starter-files/
-pip install -r requirements.txt
-conda install -c conda-forge "gym>=0.18.0,<0.19.0"
-```
-
-### gym_minigrid
-
-```
-git clone https://github.com/Farama-Foundation/Minigrid.git
-cd Minigrid
-git checkout 116fa65bf9584149f9a23c2b61c95fd84c25e467
-pip3 install -e .
-pip install minigrid
-```
-
-### torch-ac
-
-```
-cd torch-ac
-pip3 install -e .
-```
-
-### pytorch
-
-```
-conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
-```
-### wandb
-```
-pip install wandb
-```
 ## Reproducing our main results
 
+`train.py` calls `wandb.init(...)` unconditionally, so log in first (or set `WANDB_API_KEY`):
+
+```bash
+wandb login
+
+export RL_STORAGE="$HOME/data/rl_logs"    # absolute path; where models + logs land
+
+cd Minigrid_robust_ent
+bash run_a2c.sh
 ```
-export RL_STORAGE="/home/renku/work/data/rl_logs"
-export WANDB_MODE=disabled
-export WANDB_DIR="/home/renku/work/data/wandb"
 
-cd State_entropy_robust_rl/Minigrid_robust_ent
-WANDB_MODE=disabled bash run_a2c.sh
+This trains and evaluates three variants across **20 seeds each** (60 runs total), up to 10 in parallel:
+
+- **No regularization** — `beta=0.0`, `entropy_coef=0.0`
+- **Policy-entropy regularization** — `beta=0.0`, `entropy_coef=0.01`
+- **State-entropy regularization** — `beta=0.07`, `entropy_coef=0.01`
+
+All metrics and plots upload to the `RobustEnt_Minigrid_new` wandb project. To run without logging in (local logging only), prepend `WANDB_MODE=disabled bash run_a2c.sh`; output still lands in `$RL_STORAGE`. For a fast sanity check instead, call `train.py` directly:
+
+```bash
+PYTHONPATH=./torch-ac python3 rl-starter-files/rl-starter-files/scripts/train.py \
+  --algo a2c --seed 1 --frames 512 --procs 2
 ```
-This script trains and evaluates three variants:
 
-No regularization
+## Where outputs land
 
-Policy-entropy regularization
+`RL_STORAGE` is read by [scripts/utils/storage.py](rl-starter-files/rl-starter-files/scripts/utils/storage.py#L17). When set, all artifacts go under it:
 
-State-entropy regularization
+```
+$RL_STORAGE/
+└── <run_name>/                 # e.g. MiniGrid-EmptyEnv-v0_seed1_beta_0.07_alpha_0.01
+    ├── log.txt                 # console log
+    ├── log.csv                 # per-update metrics
+    ├── status.pt               # training checkpoint
+    ├── agent.pt                # saved agent for evaluate/visualize
+    └── events.out.tfevents.*   # TensorBoard stream
+```
 
-If you are logged in to Weights & Biases (wandb login), all metrics and plots will be uploaded automatically.
+If unset it defaults to `rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW/`. Use an absolute path so `run_a2c.sh` and any later eval resolve consistently regardless of the shell's working directory.
+
+## Remote / shared servers (Renku)
+
+If `conda env create` or `pip` fails with `dataclass() got an unexpected keyword argument 'slots'`, a pre-existing global `PYTHONPATH` is shadowing the env's interpreter with a Python 3.13 one. Clear it first:
+
+```bash
+unset PYTHONPATH
+conda env create -f environment.yml
+```
+
+Make it permanent for this account with `echo 'unset PYTHONPATH' >> ~/.bashrc`. The scripts re-set their own `PYTHONPATH` where needed, so this is a one-time shell fix.

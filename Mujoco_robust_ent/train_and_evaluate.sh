@@ -13,6 +13,8 @@ for seed in 1; do
       --seed $seed \
       --ent_coef $ent_coef \
       --starting_beta $starting_beta \
+      --track True \
+      --wandb_project_name RobustEnt_Mujoco \
       --save_dir $save_dir \
       --beta $beta &
     ((count++))
