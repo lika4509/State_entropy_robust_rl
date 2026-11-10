@@ -91,9 +91,9 @@ default_model_name = f"{args.env}_seed{args.seed}_beta_{args.beta}alpha_{args.en
 #wandb:
 # A rejected/unreachable login must not kill training: wandb is a logger here,
 # and every metric still goes to log.csv and TensorBoard.
-wandb_kwargs = dict(project='RobustEnt_Minigrid_new', name=default_model_name, id=default_model_name, resume="allow")
+wandb_kwargs = dict(entity="johnny1-university-of-zurich", project='RobustEnt_Minigrid_new', name=default_model_name, id=default_model_name, resume="allow")
 try:
-    wandb.init(**wandb_kwargs)
+    wandb.init(**wandb_kwargs, mode="online")
 except wandb.errors.Error as e:
     print(f"wandb: init failed ({type(e).__name__}: {e}); continuing with logging disabled.")
     print("wandb: credentials come from WANDB_API_KEY first, then ~/.netrc. "
