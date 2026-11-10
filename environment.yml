@@ -39,4 +39,4 @@ dependencies:
 
       # ---- Shared ----
       - torch==2.5.1
-      - wandb==0.16.6
+      - wandb
