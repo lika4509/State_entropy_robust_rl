@@ -18,7 +18,7 @@ This creates the `state_entropy_robust_rl` env (Python 3.9), installs `torch-ac`
 
 ## Reproducing our main results
 
-`train.py` calls `wandb.init(...)` unconditionally, so log in first (or set `WANDB_API_KEY`):
+`train.py` uploads to wandb, so log in first (or set `WANDB_API_KEY`):
 
 ```bash
 wandb login
@@ -29,13 +29,29 @@ cd Minigrid_robust_ent
 bash run_a2c.sh
 ```
 
+If wandb cannot authenticate, training still runs — wandb is downgraded to `mode="disabled"`, the real error is printed, and nothing crashes. Metrics remain in `log.csv` and TensorBoard; they just are not uploaded.
+
+Credentials are resolved in this order, so a **stale `WANDB_API_KEY` silently wins over a fresh `wandb login`**:
+
+1. `WANDB_API_KEY` environment variable
+2. `~/.netrc` (written by `wandb login`)
+
+`wandb init` printing "W&B API key is configured" only means *a* key was **found** — not that the server accepted it. If a run reports `CommError: user is not logged in` despite `wandb login`, check both sources:
+
+```bash
+env | grep WANDB_API_KEY                  # stale export in .bashrc / job script?
+python -c "import wandb; print(wandb.Api().viewer)"   # must not raise AuthenticationError
+```
+
+Fix with `unset WANDB_API_KEY` and/or `wandb login --relogin`.
+
 This trains and evaluates three variants across **20 seeds each** (60 runs total), up to 10 in parallel:
 
 - **No regularization** — `beta=0.0`, `entropy_coef=0.0`
 - **Policy-entropy regularization** — `beta=0.0`, `entropy_coef=0.01`
 - **State-entropy regularization** — `beta=0.07`, `entropy_coef=0.01`
 
-All metrics and plots upload to the `RobustEnt_Minigrid_new` wandb project. To run without logging in (local logging only), prepend `WANDB_MODE=disabled bash run_a2c.sh`; output still lands in `$RL_STORAGE`. For a fast sanity check instead, call `train.py` directly:
+All metrics and plots upload to the `RobustEnt_Minigrid_new` wandb project. To skip uploading (local logging only), prepend `WANDB_MODE=disabled bash run_a2c.sh`; output still lands in `$RL_STORAGE`. For a fast sanity check instead, call `train.py` directly:
 
 ```bash
 PYTHONPATH=./torch-ac python3 rl-starter-files/rl-starter-files/scripts/train.py \

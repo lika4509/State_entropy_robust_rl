@@ -89,7 +89,16 @@ args.mem = args.recurrence > 1
 date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
 default_model_name = f"{args.env}_seed{args.seed}_beta_{args.beta}alpha_{args.entropy_coef}"
 #wandb:
-wandb.init(project='RobustEnt_Minigrid_new', name=default_model_name,id=default_model_name,resume="allow")
+# A rejected/unreachable login must not kill training: wandb is a logger here,
+# and every metric still goes to log.csv and TensorBoard.
+wandb_kwargs = dict(project='RobustEnt_Minigrid_new', name=default_model_name, id=default_model_name, resume="allow")
+try:
+    wandb.init(**wandb_kwargs)
+except wandb.errors.Error as e:
+    print(f"wandb: init failed ({type(e).__name__}: {e}); continuing with logging disabled.")
+    print("wandb: credentials come from WANDB_API_KEY first, then ~/.netrc. "
+          "Verify with: wandb login --relogin, or unset a stale WANDB_API_KEY.")
+    wandb.init(**wandb_kwargs, mode="disabled")
 #make sure that the configs is uploaded to wandb:
 wandb.config.update(vars(args))
 model_name = args.model or default_model_name
