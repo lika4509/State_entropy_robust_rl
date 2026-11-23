@@ -3,6 +3,9 @@ import os
 import argparse
 import time
 import datetime
+import uuid
+import json
+from pathlib import Path
 import torch
 import torch_ac
 import tensorboardX
@@ -30,7 +33,9 @@ parser.add_argument("--algo",default='a2c',
 parser.add_argument("--env", default='MiniGrid-EmptyEnv-v0',
                     help="name of the environment to train on (REQUIRED)")
 parser.add_argument("--model", default=None,
-                    help="name of the model (default: {ENV}_{ALGO}_{TIME})")
+                    help="model subfolder name (default: environment, seed, beta and entropy coefficient)")
+parser.add_argument("--resume", action="store_true",
+                    help="resume --model in an existing storage directory and W&B project")
 parser.add_argument("--seed", type=int, default=57,
                     help="random seed (default: 1)")
 parser.add_argument("--log-interval", type=int, default=1,
@@ -57,7 +62,7 @@ parser.add_argument("--gae-lambda", type=float, default=0.95,
                     help="lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
 parser.add_argument("--entropy-coef", type=float, default=0.01,
                     help="entropy term coefficient (default: 0.01)")
-parser.add_argument("--ent_coef_decay",type=bool , default=True,
+parser.add_argument("--ent-coef-decay", action=argparse.BooleanOptionalAction, default=False,
                     help="decay the ent_coef through training (default: False)")
 parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
@@ -86,14 +91,56 @@ args.mem = args.recurrence > 1
 
 # Set run dir
 
-date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+experiment_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
 default_model_name = f"{args.env}_seed{args.seed}_beta_{args.beta}alpha_{args.entropy_coef}"
+if args.resume and not (os.environ.get("RL_STORAGE") and os.environ.get("WANDB_PROJECT")):
+    parser.error("--resume requires RL_STORAGE and WANDB_PROJECT")
+args.wandb_project = os.environ.get("WANDB_PROJECT") or f"RobustEnt_Minigrid_{experiment_id}"
+storage_dir = os.environ.get("RL_STORAGE")
+if not storage_dir:
+    storage_dir = Path(__file__).resolve().parent / "utils" / f"STORAGE_{experiment_id}"
+args.storage_dir = str(Path(storage_dir).expanduser().resolve())
+os.environ["RL_STORAGE"] = args.storage_dir
+model_name = args.model or default_model_name
+if Path(model_name).name != model_name or model_name in (".", ".."):
+    parser.error("--model must be a directory name, without path separators")
+model_dir = utils.get_model_dir(model_name)
+if args.resume:
+    if not Path(model_dir, "status.pt").is_file():
+        parser.error(f"No checkpoint to resume in {model_dir}")
+else:
+    Path(args.storage_dir).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(model_dir).mkdir()
+    except FileExistsError:
+        parser.error(f"Model directory already exists: {model_dir}. Choose another name or use --resume.")
+print(f"W&B project: {args.wandb_project}\nModel directory: {model_dir}", flush=True)
+metadata_path = Path(model_dir) / "experiment.json"
+wandb_run_id = uuid.uuid4().hex
+if args.resume:
+    if metadata_path.exists():
+        metadata = json.loads(metadata_path.read_text())
+        if metadata["wandb_project"] != args.wandb_project:
+            parser.error("Resume project differs from the project recorded in experiment.json")
+        wandb_run_id = metadata["wandb_run_id"]
+    else:
+        # Checkpoints from the original implementation used the model name as their W&B ID.
+        wandb_run_id = model_name
+metadata_path.write_text(json.dumps({
+    "wandb_project": args.wandb_project,
+    "wandb_run_id": wandb_run_id,
+    "model_dir": model_dir,
+    "config": vars(args),
+}, indent=2) + "\n")
 #wandb:
 # A rejected/unreachable login must not kill training: wandb is a logger here,
 # and every metric still goes to log.csv and TensorBoard.
-wandb_kwargs = dict(entity="johnny1-university-of-zurich", project='RobustEnt_Minigrid_new', name=default_model_name, id=default_model_name, resume="allow")
+wandb_kwargs = dict(entity=os.environ.get("WANDB_ENTITY", "johnny1-university-of-zurich"),
+                    project=args.wandb_project, name=model_name, id=wandb_run_id,
+                    group=args.wandb_group,
+                    resume="allow" if args.resume else "never")
 try:
-    wandb.init(**wandb_kwargs, mode="online")
+    wandb.init(**wandb_kwargs, mode=os.environ.get("WANDB_MODE", "online"))
 except wandb.errors.Error as e:
     print(f"wandb: init failed ({type(e).__name__}: {e}); continuing with logging disabled.")
     print("wandb: credentials come from WANDB_API_KEY first, then ~/.netrc. "
@@ -101,8 +148,6 @@ except wandb.errors.Error as e:
     wandb.init(**wandb_kwargs, mode="disabled")
 #make sure that the configs is uploaded to wandb:
 wandb.config.update(vars(args))
-model_name = args.model or default_model_name
-model_dir = utils.get_model_dir(model_name)
 
 # Load loggers and Tensorboard writer
 

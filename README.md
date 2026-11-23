@@ -22,7 +22,7 @@ This installs Python 3.9, PyTorch (CUDA 12.x), legacy `gym` (for Minigrid), mode
 
 ## Weight & Biases
 
-Both projects log to W&B by default. Run `wandb login` once (or set `WANDB_API_KEY`) before training. Minigrid uploads to the `RobustEnt_Minigrid_new` project; MuJoCo to `RobustEnt_Mujoco`. To disable tracking, use `WANDB_MODE=disabled` for Minigrid / omit `--track` for MuJoCo.
+Both projects log to W&B by default. Run `wandb login` once (or set `WANDB_API_KEY`) before training. MiniGrid creates a unique project per experiment unless `WANDB_PROJECT` specifies one; MuJoCo uses `RobustEnt_Mujoco`. MiniGrid checkpoint locations and resume options are described in its README. To disable tracking, use `WANDB_MODE=disabled` for MiniGrid / omit `--track` for MuJoCo.
 
 ## On shared / remote servers
 
