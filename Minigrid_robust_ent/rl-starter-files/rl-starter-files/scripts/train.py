@@ -318,7 +318,6 @@ agent = utils.Agent(envs[0].observation_space, envs[0].action_space, model_dir,
                 use_memory=False, use_text=False)
 agent.acmodel=algo.acmodel
 eval_tasks = {1:"wall",2:"elbow",3:"random_blocks",4:"reward_shift"}
-eval_metrics = {}
 for task, label in tqdm(eval_tasks.items()): #different blocked modes
     test_envs = [
         utils.make_env(args.env, 1000 * task + j, blocked=task)
@@ -369,15 +368,24 @@ for task, label in tqdm(eval_tasks.items()): #different blocked modes
     txt_logger.info(
         "Eval {} | episodes {} | return {:.3f} ± {:.3f} | success {:.3f} | length {:.1f} | timeout {:.3f}"
         .format(label, len(returns), return_mean, return_std, success_rate, length_mean, timeout_rate))
-    eval_metrics.update({
-        f"Evaluation/{label}_return_mean": return_mean,
-        f"Evaluation/{label}_return_std": return_std,
-        f"Evaluation/{label}_success_rate": success_rate,
-        f"Evaluation/{label}_length_mean": length_mean,
-        f"Evaluation/{label}_timeout_rate": timeout_rate,
-    })
 
-wandb.log(eval_metrics)
+    # Log success rate as a function of the episode step budget, matching the
+    # original evaluation curves: for each budget i, the fraction of episodes
+    # that reach the goal within i steps.
+    max_steps = int(test_envs[0].unwrapped.max_steps)
+    step_metric = f"{label}_eval_step"
+    success_metric = f"Evaluation/{label}_success_rate"
+    wandb.define_metric(step_metric, hidden=True)
+    wandb.define_metric(success_metric, step_metric=step_metric)
+    for step_budget in range(1, max_steps):
+        successes_within_budget = sum(
+            1 for success, length in zip(successes, lengths)
+            if success and length <= step_budget
+        )
+        wandb.log({
+            success_metric: successes_within_budget / len(successes),
+            step_metric: step_budget,
+        })
 
     
 

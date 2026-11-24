@@ -77,6 +77,50 @@ $RL_STORAGE/
 
 Direct `train.py` invocations also generate unique default projects and storage roots. Model subfolder names keep the original format, such as `MiniGrid-EmptyEnv-v0_seed1_beta_0.07alpha_0.01`. An explicit `--model` overrides that subfolder name. Evaluation/visualization still use the legacy `STORAGE_NEW/` fallback: set `RL_STORAGE` to the new experiment's root when loading its policies. Use an absolute path for evaluation so resolution is independent of the working directory.
 
+## Evaluating existing checkpoints on perturbed environments
+
+`eval_perturbed.sh` evaluates a checkpoint root on the four perturbation modes without retraining. It scans `<checkpoint_root>/*/status.pt`, reads the seed, beta and alpha from each model directory name, and starts one W&B run per checkpoint. From the repository root:
+
+```bash
+cd Minigrid_robust_ent
+bash eval_perturbed.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW" \
+  5
+```
+
+The second argument is the number of episodes **per worker**; with the default 8 workers, `5` means 40 episodes per perturbation mode and checkpoint. Use `5` for a quick check and `100` for the full evaluation:
+
+```bash
+bash eval_perturbed.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW" \
+  100
+```
+
+To evaluate the newer Nov 23 checkpoint set, pass its root and keep its outputs separate:
+
+```bash
+EVAL_RL_STORAGE="$PWD/eval_runs/2026" \
+EVAL_WANDB_PROJECT="RobustEnt_Minigrid_PerturbEval_2026" \
+bash eval_perturbed.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_20261123_030107_e3e130c7" \
+  100
+```
+
+Each checkpoint is evaluated on `wall`, `elbow`, `random_blocks` and `reward_shift`. The script uses `train.py --resume --frames 0`, so it loads the checkpoint but does not train. Progress and per-mode summaries are written to `<EVAL_RL_STORAGE>/<run_name>/log.txt`. W&B receives `Evaluation/<mode>_success_rate` plotted against `<mode>_eval_step`: the fraction of episodes that reach the goal within each step budget, matching the original evaluation curves. A full 60-checkpoint run with `100` episodes per worker typically takes several hours.
+
+Useful environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `EVAL_RL_STORAGE` | `./eval_runs` | Eval logs and checkpoint symlinks |
+| `EVAL_WANDB_PROJECT` | `RobustEnt_Minigrid_PerturbEval` | W&B project; created on first run |
+| `EVAL_WANDB_MODE` | `online` | Set to `disabled` for a local-only test |
+| `EVAL_PROCS` | `8` | Parallel environments per checkpoint |
+| `EVAL_CONDA_ENV` | `state_entropy_robust_rl` | Conda environment to activate |
+| `EVAL_SKIP_EXISTING` | `0` | Set to `1` to skip checkpoints with a completed `Eval` log line |
+
+Use separate `EVAL_RL_STORAGE` and `EVAL_WANDB_PROJECT` values for different checkpoint roots, otherwise run names collide. To resume an interrupted sweep, set `EVAL_SKIP_EXISTING=1` with the original storage and project.
+
 ## Resuming an experiment
 
 Existing model directories require explicit resumption:
