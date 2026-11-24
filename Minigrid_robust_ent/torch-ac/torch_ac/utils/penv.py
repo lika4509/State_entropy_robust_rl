@@ -12,6 +12,12 @@ def worker(conn, env):
         elif cmd == "reset":
             obs = env.reset()
             conn.send(obs)
+        elif cmd == "close":
+            close = getattr(env, "close", None)
+            if close is not None:
+                close()
+            conn.close()
+            break
         else:
             raise NotImplementedError
 
@@ -26,12 +32,14 @@ class ParallelEnv(gym.Env):
         self.action_space = self.envs[0].action_space
 
         self.locals = []
+        self.processes = []
         for env in self.envs[1:]:
             local, remote = Pipe()
             self.locals.append(local)
             p = Process(target=worker, args=(remote, env))
             p.daemon = True
             p.start()
+            self.processes.append(p)
             remote.close()
 
     def reset(self):
@@ -48,6 +56,21 @@ class ParallelEnv(gym.Env):
             obs = self.envs[0].reset()
         results = zip(*[(obs, reward, done, info)] + [local.recv() for local in self.locals])
         return results
+
+    def close(self):
+        for local in self.locals:
+            try:
+                local.send(("close", None))
+            except OSError:
+                pass
+        for p in self.processes:
+            p.join()
+        for local in self.locals:
+            local.close()
+        for env in self.envs:
+            close = getattr(env, "close", None)
+            if close is not None:
+                close()
 
     def render(self):
         raise NotImplementedError

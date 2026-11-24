@@ -4,6 +4,8 @@ This repo is based on the paper: *Maximum Value-Conditional State Entropy Explor
 
 (We do **not** use value conditioning in our experiments.)
 
+Current robustness variants, their limitations, and proposed stronger perturbations are documented in [PERTURBATIONS.md](PERTURBATIONS.md).
+
 ## Installation
 
 The single `environment.yml` at the **repository root** installs everything for both Minigrid and MuJoCo. Run it from the repo root so the relative `torch-ac` path resolves:

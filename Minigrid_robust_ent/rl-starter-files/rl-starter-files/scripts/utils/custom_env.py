@@ -41,7 +41,11 @@ class EmptyEnv(MiniGridEnv):
         #declare the observation space
         self.blocked = blocked
         self.observation_space = gym.spaces.Dict({'image': gym.spaces.Box(low=0, high=255, shape=(7, 7, 3), dtype='uint8')})
-        self.reset()
+        # Layouts are generated from a per-environment seed and a reset counter.
+        # This keeps them independent of the global NumPy RNG and reproducible
+        # across policies that complete the same number of episodes.
+        self._layout_seed = None
+        self._layout_counter = 0
         self.occupancy = np.zeros((self.grid_size, self.grid_size))
         self.possible_block_modes =[False,1,2,3,4]
 
@@ -52,10 +56,24 @@ class EmptyEnv(MiniGridEnv):
     def _gen_mission():
         return "reach the goal"
     def seed(self, seed=None):
-        # Seed the random number generator
-        np.random.seed(seed)
-        self.seed = seed
+        # Store the layout seed for this environment instead of seeding the
+        # global NumPy RNG.
+        self._layout_seed = seed
+        self._layout_counter = 0
+        return [seed]
+
     def _gen_grid(self, width, height):
+        # Use a per-environment RNG seeded by the environment seed and the
+        # number of layouts generated so far.
+        base_seed = self._layout_seed
+        if base_seed is None:
+            base_seed = np.random.SeedSequence().entropy
+        layout_seed = np.random.SeedSequence(
+            [int(base_seed), self._layout_counter]
+        ).generate_state(1)[0]
+        rng = np.random.RandomState(layout_seed)
+        self._layout_counter += 1
+
         # Create an empty grid
         self.grid = Grid(width, height)
 
@@ -64,14 +82,13 @@ class EmptyEnv(MiniGridEnv):
         
         
         if self.blocked == 1:
-             x_blocked = np.random.randint(2, width-3)
              x_blocked=4
              blocks= [(x_blocked,5),(x_blocked,4),(x_blocked,3),(x_blocked,2),(x_blocked,1)]
              for i in range(len(blocks)):
                 self.grid.set(blocks[i][0],blocks[i][1],Wall())
 
         elif self.blocked == 2:
-            y_blocked = np.random.randint(1, height-5)
+            y_blocked = rng.randint(1, height-5)
             blocks =[(5,y_blocked),(6,y_blocked),(7,y_blocked),(5,y_blocked+1),(5,y_blocked+2)]
             for i in range(len(blocks)):
                 self.grid.set(blocks[i][0],blocks[i][1],Wall())
@@ -84,7 +101,7 @@ class EmptyEnv(MiniGridEnv):
             all_points = np.array(all_points)
             
             num_points = 7
-            random_indices = np.random.choice(all_points.shape[0], num_points, replace=False)
+            random_indices = rng.choice(all_points.shape[0], num_points, replace=False)
             random_points = all_points[random_indices]
             for i in range(len(random_points)):
                 self.grid.set(random_points[i][0],random_points[i][1],Wall())
@@ -96,8 +113,8 @@ class EmptyEnv(MiniGridEnv):
         # Place a goal square in the bottom-right corner
         if self.blocked == 4:
             # generate a random position for the goal
-            x_goal = np.random.randint(2, width-2)
-            y_goal = np.random.randint(2, height-2)
+            x_goal = rng.randint(2, width-2)
+            y_goal = rng.randint(2, height-2)
             # set the goal position
             self.put_obj(Goal(), x_goal, y_goal)
             
@@ -119,7 +136,7 @@ class EmptyEnv(MiniGridEnv):
 
         if isinstance(self.grid.get(*self.agent_pos), self.PenaltyTile):
             #with probability 0.75 a penalty is given:
-            if np.random.rand() < 0.75:
+            if self.np_random.random() < 0.75:
                 reward += -0.2
             #if steps limit isnt met, then the agent isnt done
             if self.step_count < self.max_steps:
@@ -131,13 +148,17 @@ class EmptyEnv(MiniGridEnv):
         if done or truncated:
             done = True
         self.occupancy[self.agent_pos[0], self.agent_pos[1]] += 1
-
+        info = dict(info)
+        info["success"] = isinstance(self.grid.get(*self.agent_pos), Goal)
 
         return obs, reward, done, info
     
     def reset(self,seed=None):
+        if seed is not None:
+            self._layout_seed = seed
+            self._layout_counter = 0
         self.occupancy = np.zeros((self.grid_size, self.grid_size))
-        obs,_ = super().reset()
+        obs,_ = super().reset(seed=seed)
         return obs
     
     class PenaltyTile(Lava):
@@ -156,6 +177,7 @@ class EmptyEnv(MiniGridEnv):
 def main():
     env = EmptyEnv(blocked= 4,render_mode='human')
     pygame.init()
+    env.reset()
     while True:
         env.render()
     # enable manual control for testing

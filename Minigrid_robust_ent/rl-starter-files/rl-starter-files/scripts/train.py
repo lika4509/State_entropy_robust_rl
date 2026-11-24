@@ -46,6 +46,8 @@ parser.add_argument("--procs", type=int, default=8,
                     help="number of processes (default: 16)")
 parser.add_argument("--frames", type=int, default=3*10**6,
                     help="number of frames of training (default: 1e7)")
+parser.add_argument("--episodes", type=int, default=100,
+                    help="number of evaluation episodes per worker (default: 100)")
 
 ## Parameters for main algorithm
 parser.add_argument("--epochs", type=int, default=4,
@@ -308,84 +310,74 @@ while num_frames < args.frames:
         utils.save_status(status, model_dir)
         txt_logger.info("Status saved")
 
-# Evaluate model kernel robustness
+# Evaluate model robustness on the perturbed environments
 #create test environments:
 
 agent = utils.Agent(envs[0].observation_space, envs[0].action_space, model_dir,
                 device=device, argmax=False, num_envs=args.procs,
                 use_memory=False, use_text=False)
 agent.acmodel=algo.acmodel
-args.porcs =20
-args.episodes = 100
 eval_tasks = {1:"wall",2:"elbow",3:"random_blocks",4:"reward_shift"}
-for task in tqdm(range(4)): #different blocked modes
-    test_envs = []  
-    for j in range(args.procs):
-        env = utils.make_env(args.env,1000 *task+j, blocked=task+1)
-        test_envs.append(env)
+eval_metrics = {}
+for task, label in tqdm(eval_tasks.items()): #different blocked modes
+    test_envs = [
+        utils.make_env(args.env, 1000 * task + j, blocked=task)
+        for j in range(args.procs)
+    ]
     test_env = ParallelEnv(test_envs)
 
-    logs = {"num_frames_per_episode": [], "return_per_episode": []}
+    # Run agent. Each worker completes `args.episodes` episodes; layouts are
+    # reproducible because EmptyEnv derives them from the environment seed and
+    # the number of resets.
+    obss = test_env.reset()
+    episode_returns = torch.zeros(args.procs, device=device)
+    episode_lengths = torch.zeros(args.procs, device=device)
+    completed = [0] * args.procs
+    returns = []
+    lengths = []
+    successes = []
+    timeouts = []
 
-    # Run agent
-    log_episode_return = torch.zeros(args.episodes,args.procs, device=device)
-    log_episode_num_frames = torch.zeros(args.episodes,args.procs, device=device)
-    for k in range(args.episodes): #repetitions
-        obss = test_env.reset()
-        log_done_counter = 0
-        
-        while log_done_counter < args.episodes:
-            actions = agent.get_actions(obss)
-            obss, rewards, dones, info = test_env.step(actions)
-            agent.analyze_feedbacks(rewards, dones)
+    while min(completed) < args.episodes:
+        actions = agent.get_actions(obss)
+        obss, rewards, dones, infos = test_env.step(actions)
+        agent.analyze_feedbacks(rewards, dones)
 
-            log_episode_return[k] += torch.tensor(rewards, device=device, dtype=torch.float)
-            log_episode_num_frames[k] += torch.ones(args.procs, device=device)
+        episode_returns += torch.tensor(rewards, device=device, dtype=torch.float)
+        episode_lengths += torch.ones(args.procs, device=device)
 
+        for i, done in enumerate(dones):
+            if done:
+                if completed[i] < args.episodes:
+                    length = episode_lengths[i].item()
+                    success = bool(infos[i].get("success", rewards[i] > 0))
+                    returns.append(episode_returns[i].item())
+                    lengths.append(length)
+                    successes.append(float(success))
+                    timeouts.append(float(not success and length >= test_envs[i].unwrapped.max_steps))
+                    completed[i] += 1
+                episode_returns[i] = 0
+                episode_lengths[i] = 0
 
-            for i, done in enumerate(dones):
-                if done:
-                    log_done_counter += 1
-                    logs["return_per_episode"].append(log_episode_return[k,i].item())
-                    logs["num_frames_per_episode"].append(log_episode_num_frames[k,i].item())
+    test_env.close()
 
-            mask = 1 - torch.tensor(dones, device=device, dtype=torch.float)
-            log_episode_return[k] *= mask
-            log_episode_num_frames[k] *= mask
+    return_mean = float(np.mean(returns))
+    return_std = float(np.std(returns))
+    success_rate = float(np.mean(successes))
+    length_mean = float(np.mean(lengths))
+    timeout_rate = float(np.mean(timeouts))
+    txt_logger.info(
+        "Eval {} | episodes {} | return {:.3f} ± {:.3f} | success {:.3f} | length {:.1f} | timeout {:.3f}"
+        .format(label, len(returns), return_mean, return_std, success_rate, length_mean, timeout_rate))
+    eval_metrics.update({
+        f"Evaluation/{label}_return_mean": return_mean,
+        f"Evaluation/{label}_return_std": return_std,
+        f"Evaluation/{label}_success_rate": success_rate,
+        f"Evaluation/{label}_length_mean": length_mean,
+        f"Evaluation/{label}_timeout_rate": timeout_rate,
+    })
 
-
-
-    # Print logs
-
-    num_frames = sum(logs["num_frames_per_episode"])
-    return_per_episode = utils.synthesize(logs["return_per_episode"])
-    num_frames_per_episode = utils.synthesize(logs["num_frames_per_episode"])
-
-    # print("F {} | FPS {:.0f} | D {} | R:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {}"
-    #     .format(num_frames, fps, duration,
-    #             *return_per_episode.values(),
-    #             *num_frames_per_episode.values()))
-
-    # Print worst episodes
-
-    n = args.episodes * args.procs 
-    # if n > 0:
-    #     print("\n{} worst episodes:".format(n))
-
-    #     indexes = sorted(range(len(logs["return_per_episode"])), key=lambda k: logs["return_per_episode"][k])
-    #     for i in indexes[:n]:
-    #         print("- episode {}: R={}, F={}".format(i, logs["return_per_episode"][i], logs["num_frames_per_episode"][i]))
-        
-    #get the success rate at each time step:
-    success_rate = []
-    #longest episode:
-    longest_episode = int(max(logs["num_frames_per_episode"]))
-    max_episode = 200
-    for i in range(1, max_episode):
-        succseeded_in_i_steps = sum([1 for j in range(n) if logs["num_frames_per_episode"][j] < i])
-        success_rate.append(succseeded_in_i_steps/n)
-        wandb.log({f"Evaluation/{eval_tasks[task+1]}_success_rate": success_rate[-1],f"{eval_tasks[task+1]}_eval_step": i})
-    # wandb.log({"avg_return": np.mean(logs["return_per_episode"]), "eval_step": longest_episode})
+wandb.log(eval_metrics)
 
     
 

@@ -18,3 +18,4 @@ rl-starter-files/rl-starter-files/*.csv
 rl-starter-files/rl-starter-files/scripts/STORAGE_NEW
 rl-starter-files/rl-starter-files/scripts/STORAGE_NEW_2
 wandb/
+eval_runs/
