@@ -193,7 +193,9 @@ except wandb.errors.Error as e:
           "Verify with: wandb login --relogin, or unset a stale WANDB_API_KEY.")
     wandb.init(**wandb_kwargs, mode="disabled")
 #make sure that the configs is uploaded to wandb:
-wandb.config.update(vars(args))
+# allow_val_change is needed when resuming an eval run with a different mode
+# selection, e.g. appending rooms/maze_small to an existing strong-eval run.
+wandb.config.update(vars(args), allow_val_change=True)
 
 # Load loggers and Tensorboard writer
 
