@@ -1,3 +1,5 @@
+from collections import deque
+
 from minigrid.core.constants import COLOR_NAMES
 from minigrid.core.grid import Grid
 from minigrid.core.mission import MissionSpace
@@ -17,6 +19,7 @@ class EmptyEnv(MiniGridEnv):
         agent_start_dir=0,
         max_steps= 200,
         blocked=False,
+        num_blocks=15,
         **kwargs,
     ):
         self.agent_start_pos = agent_start_pos
@@ -40,6 +43,7 @@ class EmptyEnv(MiniGridEnv):
         self.action_space = gym.spaces.Discrete(3)
         #declare the observation space
         self.blocked = blocked
+        self.num_blocks = int(num_blocks)
         self.observation_space = gym.spaces.Dict({'image': gym.spaces.Box(low=0, high=255, shape=(7, 7, 3), dtype='uint8')})
         # Layouts are generated from a per-environment seed and a reset counter.
         # This keeps them independent of the global NumPy RNG and reproducible
@@ -47,7 +51,7 @@ class EmptyEnv(MiniGridEnv):
         self._layout_seed = None
         self._layout_counter = 0
         self.occupancy = np.zeros((self.grid_size, self.grid_size))
-        self.possible_block_modes =[False,1,2,3,4]
+        self.possible_block_modes =[False,1,2,3,4,5,6,7]
 
         
 
@@ -61,6 +65,97 @@ class EmptyEnv(MiniGridEnv):
         self._layout_seed = seed
         self._layout_counter = 0
         return [seed]
+
+    @staticmethod
+    def _is_solvable(blocked_cells, start, goal, width, height):
+        """Return True if a 4-connected path exists around blocked cells."""
+        if start == goal:
+            return True
+
+        queue = deque([start])
+        visited = {start}
+        while queue:
+            x, y = queue.popleft()
+            if (x, y) == goal:
+                return True
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if not (1 <= nx < width - 1 and 1 <= ny < height - 1):
+                    continue
+                if (nx, ny) in blocked_cells or (nx, ny) in visited:
+                    continue
+                visited.add((nx, ny))
+                queue.append((nx, ny))
+        return False
+
+    def _random_wall_cells(self, rng, width, height, goal):
+        """Sample a random straight wall, either partial or full with one gap."""
+        start = self.agent_start_pos or (1, 1)
+
+        for _ in range(100):
+            vertical = rng.rand() < 0.5
+            full = rng.rand() < 0.5
+            cells = set()
+
+            if vertical:
+                x = rng.randint(3, width - 3)
+                if full:
+                    gap_y = rng.randint(2, height - 2)
+                    cells = {
+                        (x, y) for y in range(1, height - 1) if y != gap_y
+                    }
+                else:
+                    length = rng.randint(5, min(7, height - 3) + 1)
+                    y0 = rng.randint(1, height - length)
+                    cells = {(x, y0 + i) for i in range(length)}
+            else:
+                y = rng.randint(3, height - 3)
+                if full:
+                    gap_x = rng.randint(2, width - 2)
+                    cells = {
+                        (x, y) for x in range(1, width - 1) if x != gap_x
+                    }
+                else:
+                    length = rng.randint(5, min(7, width - 3) + 1)
+                    x0 = rng.randint(1, width - length)
+                    cells = {(x0 + i, y) for i in range(length)}
+
+            if self._is_solvable(cells, start, goal, width, height):
+                return cells
+
+        return set()
+
+    def _dense_block_cells(self, rng, width, height, num_blocks, goal):
+        """Sample random block cells and reject layouts that block the goal."""
+        start = self.agent_start_pos or (1, 1)
+        allowed = [
+            (x, y)
+            for x in range(1, width - 1)
+            for y in range(1, height - 1)
+            if (x, y) != start and (x, y) != goal
+        ]
+        num_blocks = min(int(num_blocks), len(allowed))
+
+        for _ in range(100):
+            indices = rng.choice(len(allowed), num_blocks, replace=False)
+            cells = {allowed[i] for i in indices}
+            if self._is_solvable(cells, start, goal, width, height):
+                return cells
+
+        # Fallback: add blocks one at a time while the goal remains reachable.
+        cells = set()
+        for i in rng.permutation(len(allowed)):
+            if len(cells) >= num_blocks:
+                break
+            candidate = cells | {allowed[i]}
+            if self._is_solvable(candidate, start, goal, width, height):
+                cells = candidate
+        return cells
+
+    def _corner_goal(self, rng, width, height):
+        if rng.rand() < 0.5:
+            return width - 2, 1
+        return 1, height - 2
 
     def _gen_grid(self, width, height):
         # Use a per-environment RNG seeded by the environment seed and the
@@ -106,9 +201,20 @@ class EmptyEnv(MiniGridEnv):
             for i in range(len(random_points)):
                 self.grid.set(random_points[i][0],random_points[i][1],Wall())
 
+        elif self.blocked == 5:
+            # Random straight wall: partial, or full with exactly one gap.
+            goal = (width - 2, height - 2)
+            for x, y in self._random_wall_cells(rng, width, height, goal):
+                self.grid.set(x, y, Wall())
 
-
-
+        elif self.blocked == 6:
+            # Dense random blocks, rejection-sampled until the goal is reachable.
+            goal = (width - 2, height - 2)
+            blocks = self._dense_block_cells(
+                rng, width, height, self.num_blocks, goal
+            )
+            for x, y in blocks:
+                self.grid.set(x, y, Wall())
 
         # Place a goal square in the bottom-right corner
         if self.blocked == 4:
@@ -117,7 +223,12 @@ class EmptyEnv(MiniGridEnv):
             y_goal = rng.randint(2, height-2)
             # set the goal position
             self.put_obj(Goal(), x_goal, y_goal)
-            
+
+        elif self.blocked == 7:
+            # Extreme reward shift: one goal in a non-training corner.
+            x_goal, y_goal = self._corner_goal(rng, width, height)
+            self.put_obj(Goal(), x_goal, y_goal)
+
         else:
             self.put_obj(Goal(), width - 2, height - 2)
 

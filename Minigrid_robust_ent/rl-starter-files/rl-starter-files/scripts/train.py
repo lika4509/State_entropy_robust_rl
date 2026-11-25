@@ -22,6 +22,22 @@ from torch_ac.utils.penv import ParallelEnv
 from tqdm import tqdm
 
 
+EVAL_MODE_SPECS = {
+    # Original perturbations. Keep these definitions unchanged.
+    "wall": {"blocked": 1},
+    "elbow": {"blocked": 2},
+    "random_blocks": {"blocked": 3},
+    "reward_shift": {"blocked": 4},
+    # Stronger perturbations.
+    "wall_random": {"blocked": 5},
+    "random_blocks_dense": {"blocked": 6},
+    "random_blocks_10": {"blocked": 6, "num_blocks": 10},
+    "random_blocks_15": {"blocked": 6, "num_blocks": 15},
+    "random_blocks_20": {"blocked": 6, "num_blocks": 20},
+    "reward_corners": {"blocked": 7},
+}
+
+
 # Go up two directories from the script location (to VCSE_A2C)
 
 parser = argparse.ArgumentParser()
@@ -48,6 +64,10 @@ parser.add_argument("--frames", type=int, default=3*10**6,
                     help="number of frames of training (default: 1e7)")
 parser.add_argument("--episodes", type=int, default=100,
                     help="number of evaluation episodes per worker (default: 100)")
+parser.add_argument("--eval-modes", default="wall,elbow,random_blocks,reward_shift",
+                    help="comma-separated evaluation modes (default: original four)")
+parser.add_argument("--num-blocks", type=int, default=15,
+                    help="number of blocks for random_blocks_dense (default: 15)")
 
 ## Parameters for main algorithm
 parser.add_argument("--epochs", type=int, default=4,
@@ -87,7 +107,29 @@ parser.add_argument("--use_value_condition", action="store_true", default=False)
 parser.add_argument("--beta", type=float, default=0.05)
 parser.add_argument("--use_batch", action="store_true", default=True)
 
+
+def resolve_eval_tasks(raw_modes, default_num_blocks):
+    tasks = []
+    seen = set()
+    for name in (part.strip() for part in raw_modes.split(",")):
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        spec = EVAL_MODE_SPECS.get(name)
+        if spec is None:
+            valid = ", ".join(sorted(EVAL_MODE_SPECS))
+            parser.error(f"Unknown eval mode '{name}'. Valid modes: {valid}")
+        env_kwargs = {key: value for key, value in spec.items() if key != "blocked"}
+        if spec["blocked"] == 6 and "num_blocks" not in env_kwargs:
+            env_kwargs["num_blocks"] = default_num_blocks
+        tasks.append((name, spec["blocked"], env_kwargs))
+    if not tasks:
+        parser.error("--eval-modes must contain at least one mode")
+    return tasks
+
+
 args = parser.parse_args()
+args.eval_tasks = resolve_eval_tasks(args.eval_modes, args.num_blocks)
 args.wandb_group = f"beta:{args.beta}_alpha:{args.entropy_coef}"
 args.mem = args.recurrence > 1
 
@@ -317,10 +359,9 @@ agent = utils.Agent(envs[0].observation_space, envs[0].action_space, model_dir,
                 device=device, argmax=False, num_envs=args.procs,
                 use_memory=False, use_text=False)
 agent.acmodel=algo.acmodel
-eval_tasks = {1:"wall",2:"elbow",3:"random_blocks",4:"reward_shift"}
-for task, label in tqdm(eval_tasks.items()): #different blocked modes
+for label, blocked, env_kwargs in tqdm(args.eval_tasks): #different blocked modes
     test_envs = [
-        utils.make_env(args.env, 1000 * task + j, blocked=task)
+        utils.make_env(args.env, 1000 * blocked + j, blocked=blocked, **env_kwargs)
         for j in range(args.procs)
     ]
     test_env = ParallelEnv(test_envs)

@@ -121,6 +121,42 @@ Useful environment variables:
 
 Use separate `EVAL_RL_STORAGE` and `EVAL_WANDB_PROJECT` values for different checkpoint roots, otherwise run names collide. To resume an interrupted sweep, set `EVAL_SKIP_EXISTING=1` with the original storage and project.
 
+## Evaluating the stronger perturbations
+
+`eval_perturbed_strong.sh` runs only the new stronger modes; the original four modes and `eval_perturbed.sh` are unchanged. It evaluates each checkpoint on five tasks:
+
+- `wall_random`: random straight wall, either partial or full with one gap.
+- `random_blocks_10`, `random_blocks_15`, `random_blocks_20`: dense random blocks, rejection-sampled until the goal is reachable.
+- `reward_corners`: one goal in the top-right `(8,1)` or bottom-left `(1,8)`, never the training corner.
+
+From `Minigrid_robust_ent/`:
+
+```bash
+bash eval_perturbed_strong.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW" \
+  5
+```
+
+As with the original launcher, the second argument is episodes **per worker**. With the default 8 workers, `5` means 40 episodes per task; use `100` for the full evaluation:
+
+```bash
+bash eval_perturbed_strong.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW" \
+  100
+```
+
+For the newer Nov 23 checkpoint set:
+
+```bash
+bash eval_perturbed_strong.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_20261123_030107_e3e130c7" \
+  100
+```
+
+Defaults are `EVAL_RL_STORAGE=./eval_runs/strong` and `EVAL_WANDB_PROJECT=RobustEnt_Minigrid_PerturbEval_Strong`. The same overrides as the original launcher apply: `EVAL_WANDB_MODE`, `EVAL_PROCS`, `EVAL_CONDA_ENV` and `EVAL_SKIP_EXISTING`. The skip check requires all five new eval lines in `log.txt`. Because this runs five tasks per checkpoint, expect roughly 1.25–2× the runtime of the original four-mode launcher.
+
+All new wall and block layouts are checked with BFS before use, so every evaluated layout has a path from the start to the goal. Layouts are sampled from the per-environment seed and reset counter, so rerunning with the same checkpoint root, `EVAL_PROCS` and `EVAL_EPISODES` produces the same layouts.
+
 ## Resuming an experiment
 
 Existing model directories require explicit resumption:
