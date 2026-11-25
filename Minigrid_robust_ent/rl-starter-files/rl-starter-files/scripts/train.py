@@ -35,6 +35,8 @@ EVAL_MODE_SPECS = {
     "random_blocks_15": {"blocked": 6, "num_blocks": 15},
     "random_blocks_20": {"blocked": 6, "num_blocks": 20},
     "reward_corners": {"blocked": 7},
+    "rooms": {"blocked": 8},
+    "maze_small": {"blocked": 9},
 }
 
 

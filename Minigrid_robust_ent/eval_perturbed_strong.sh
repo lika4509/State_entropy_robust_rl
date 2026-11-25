@@ -1,25 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Evaluate every checkpoint on the stronger perturbation suite.
+# Evaluate checkpoints on selectable stronger perturbation modes.
 #
-# Modes:
+# Available modes:
 #   wall_random          random straight wall, partial or full with one gap
 #   random_blocks_10     dense random blocks, 10 cells
 #   random_blocks_15     dense random blocks, 15 cells
 #   random_blocks_20     dense random blocks, 20 cells
 #   reward_corners       goal in a non-training corner
+#   rooms                2x2 rooms connected by gaps
+#   maze_small           small 1-cell-corridor maze
 #
 # The original modes and eval_perturbed.sh are unchanged.
 #
 # Usage:
-#   bash eval_perturbed_strong.sh [CHECKPOINT_ROOT] [EPISODES_PER_WORKER]
+#   bash eval_perturbed_strong.sh [CHECKPOINT_ROOT] [EPISODES_PER_WORKER] [MODES]
+#
+# MODES is a comma-separated list and overrides EVAL_MODES.
 #
 # Defaults:
 #   CHECKPOINT_ROOT     = rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW
 #   EPISODES_PER_WORKER = 5
+#   MODES               = wall_random,random_blocks_10,random_blocks_15,
+#                         random_blocks_20,reward_corners
 #
 # Environment overrides:
+#   EVAL_MODES           comma-separated mode list, e.g. "rooms,maze_small"
+#   EVAL_RUN_TAG         run-name tag (default: strong)
 #   EVAL_RL_STORAGE      where logs and checkpoint symlinks are written
 #                        (default: <repo>/eval_runs/strong)
 #   EVAL_WANDB_PROJECT   W&B project (default: RobustEnt_Minigrid_PerturbEval_Strong)
@@ -27,18 +35,31 @@ set -euo pipefail
 #   EVAL_CONDA_ENV       conda environment (default: state_entropy_robust_rl)
 #   EVAL_PROCS           number of parallel environments per run (default: 8)
 #   EVAL_SKIP_EXISTING   set to 1 to skip checkpoints whose log already has all
-#                        five eval lines (default: 0)
+#                        selected eval lines (default: 0)
 #
 # This launches train.py with --resume --frames 0, so no training happens: it
-# loads each checkpoint, runs the stronger perturbations, and writes to W&B.
+# loads each checkpoint, runs the selected perturbations, and writes to W&B.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CHECKPOINT_ROOT="${1:-$SCRIPT_DIR/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_NEW}"
 EPISODES="${2:-5}"
 
-EVAL_MODES="wall_random,random_blocks_10,random_blocks_15,random_blocks_20,reward_corners"
-EVAL_LABELS=(wall_random random_blocks_10 random_blocks_15 random_blocks_20 reward_corners)
+DEFAULT_EVAL_MODES="wall_random,random_blocks_10,random_blocks_15,random_blocks_20,reward_corners"
+EVAL_MODES="${3:-${EVAL_MODES:-$DEFAULT_EVAL_MODES}}"
+EVAL_LABELS=()
+for mode in ${EVAL_MODES//,/ }; do
+    if [[ -n "$mode" ]]; then
+        EVAL_LABELS+=("$mode")
+    fi
+done
+if (( ${#EVAL_LABELS[@]} == 0 )); then
+    echo "No evaluation modes selected." >&2
+    exit 1
+fi
+EVAL_MODES="$(IFS=','; printf '%s' "${EVAL_LABELS[*]}")"
+RUN_TAG="${EVAL_RUN_TAG:-strong}"
+RUN_TAG="$(printf '%s' "$RUN_TAG" | tr -c 'A-Za-z0-9_-' '_')"
 
 if [[ ! -d "$CHECKPOINT_ROOT" ]]; then
     echo "Checkpoint root not found: $CHECKPOINT_ROOT" >&2
@@ -78,6 +99,7 @@ echo "Checkpoint root: $CHECKPOINT_ROOT"
 echo "Found:           $TOTAL checkpoints"
 echo "Eval logs:       $EVAL_STORAGE"
 echo "W&B:             $WANDB_PROJECT (mode=$WANDB_MODE)"
+echo "Run tag:         $RUN_TAG"
 echo "Modes:           $EVAL_MODES"
 echo "Episodes:        $EPISODES per worker with ${EVAL_PROCS:-8} workers"
 echo
@@ -91,7 +113,7 @@ for CHECKPOINT in "${CHECKPOINTS[@]}"; do
     CHECKPOINT_DIR="$(dirname "$CHECKPOINT")"
     CHECKPOINT_NAME="$(basename "$CHECKPOINT_DIR")"
 
-    RUN_NAME="eval_strong_${CHECKPOINT_NAME}_ep${EPISODES}"
+    RUN_NAME="eval_${RUN_TAG}_${CHECKPOINT_NAME}_ep${EPISODES}"
     RUN_NAME="$(printf '%s' "$RUN_NAME" | tr -c 'A-Za-z0-9_-' '_')"
     MODEL_DIR="$EVAL_STORAGE/$RUN_NAME"
 
@@ -157,4 +179,4 @@ if (( ${#FAILED[@]} > 0 )); then
     exit 1
 fi
 
-echo "All ${TOTAL} checkpoints evaluated on the stronger perturbations."
+echo "All ${TOTAL} checkpoints evaluated on the selected perturbations."

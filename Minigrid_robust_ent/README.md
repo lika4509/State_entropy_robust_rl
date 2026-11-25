@@ -123,11 +123,13 @@ Use separate `EVAL_RL_STORAGE` and `EVAL_WANDB_PROJECT` values for different che
 
 ## Evaluating the stronger perturbations
 
-`eval_perturbed_strong.sh` runs only the new stronger modes; the original four modes and `eval_perturbed.sh` are unchanged. It evaluates each checkpoint on five tasks:
+`eval_perturbed_strong.sh` runs only the new stronger modes; the original four modes and `eval_perturbed.sh` are unchanged. By default it evaluates each checkpoint on five tasks:
 
 - `wall_random`: random straight wall, either partial or full with one gap.
 - `random_blocks_10`, `random_blocks_15`, `random_blocks_20`: dense random blocks, rejection-sampled until the goal is reachable.
 - `reward_corners`: one goal in the top-right `(8,1)` or bottom-left `(1,8)`, never the training corner.
+
+The launcher also supports `rooms` (2×2 rooms connected by gaps) and `maze_small` (small 1-cell-corridor maze). Select any subset with the third positional argument or `EVAL_MODES`.
 
 From `Minigrid_robust_ent/`:
 
@@ -153,9 +155,31 @@ bash eval_perturbed_strong.sh \
   100
 ```
 
-Defaults are `EVAL_RL_STORAGE=./eval_runs/strong` and `EVAL_WANDB_PROJECT=RobustEnt_Minigrid_PerturbEval_Strong`. The same overrides as the original launcher apply: `EVAL_WANDB_MODE`, `EVAL_PROCS`, `EVAL_CONDA_ENV` and `EVAL_SKIP_EXISTING`. The skip check requires all five new eval lines in `log.txt`. Because this runs five tasks per checkpoint, expect roughly 1.25–2× the runtime of the original four-mode launcher.
+To run only `rooms` and `maze_small`, select the modes and give the runs a distinct tag. The project and storage stay the same, so the curves appear alongside the other strong perturbations:
 
-All new wall and block layouts are checked with BFS before use, so every evaluated layout has a path from the start to the goal. Layouts are sampled from the per-environment seed and reset counter, so rerunning with the same checkpoint root, `EVAL_PROCS` and `EVAL_EPISODES` produces the same layouts.
+```bash
+EVAL_MODES="rooms,maze_small" \
+EVAL_RUN_TAG="rooms_maze" \
+EVAL_WANDB_PROJECT="RobustEnt_Minigrid_PerturbEval_Strong" \
+EVAL_RL_STORAGE="$PWD/eval_runs/strong" \
+bash eval_perturbed_strong.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_20261123_030107_e3e130c7" \
+  100
+```
+
+The same selection can be passed as the third argument:
+
+```bash
+EVAL_RUN_TAG="rooms_maze" \
+bash eval_perturbed_strong.sh \
+  "$PWD/rl-starter-files/rl-starter-files/scripts/utils/STORAGE_20261123_030107_e3e130c7" \
+  100 \
+  "rooms,maze_small"
+```
+
+Defaults are `EVAL_RL_STORAGE=./eval_runs/strong`, `EVAL_WANDB_PROJECT=RobustEnt_Minigrid_PerturbEval_Strong` and `EVAL_RUN_TAG=strong`. Use a distinct `EVAL_RUN_TAG` when selecting a different mode subset, otherwise the new results reuse the default strong run names. The same overrides as the original launcher apply: `EVAL_WANDB_MODE`, `EVAL_PROCS`, `EVAL_CONDA_ENV` and `EVAL_SKIP_EXISTING`. The skip check requires all selected eval lines in `log.txt`. The default five-task run takes roughly 1.25–2× the runtime of the original four-mode launcher.
+
+All new wall, block, room and maze layouts are checked with BFS before use, so every evaluated layout has a path from the start to the goal. Layouts are sampled from the per-environment seed and reset counter, so rerunning with the same checkpoint root, `EVAL_PROCS` and `EVAL_EPISODES` produces the same layouts.
 
 ## Resuming an experiment
 

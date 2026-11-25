@@ -51,7 +51,7 @@ class EmptyEnv(MiniGridEnv):
         self._layout_seed = None
         self._layout_counter = 0
         self.occupancy = np.zeros((self.grid_size, self.grid_size))
-        self.possible_block_modes =[False,1,2,3,4,5,6,7]
+        self.possible_block_modes =[False,1,2,3,4,5,6,7,8,9]
 
         
 
@@ -157,6 +157,86 @@ class EmptyEnv(MiniGridEnv):
             return width - 2, 1
         return 1, height - 2
 
+    def _rooms_cells(self, rng, width, height, goal):
+        """Sample a 2x2 room layout with one gap in each interior wall."""
+        start = self.agent_start_pos or (1, 1)
+        x_wall = width // 2
+        y_wall = height // 2
+
+        for _ in range(100):
+            # There are two solvable room paths:
+            #   top-left -> top-right -> bottom-right
+            #   top-left -> bottom-left -> bottom-right
+            if rng.rand() < 0.5:
+                gap_y = rng.randint(2, y_wall)          # top half
+                gap_x = rng.randint(x_wall + 1, width - 2)  # right half
+            else:
+                gap_y = rng.randint(y_wall + 1, height - 2)  # bottom half
+                gap_x = rng.randint(2, x_wall)               # left half
+
+            cells = set()
+            for y in range(1, height - 1):
+                if y != gap_y:
+                    cells.add((x_wall, y))
+            for x in range(1, width - 1):
+                if x != gap_x:
+                    cells.add((x, y_wall))
+
+            if self._is_solvable(cells, start, goal, width, height):
+                return cells
+
+        return set()
+
+    def _maze_cells(self, rng, width, height):
+        """Sample a small 1-cell-corridor maze with a reachable goal."""
+        start = self.agent_start_pos or (1, 1)
+        goal = (width - 2, height - 2)
+        cells = {
+            (x, y)
+            for x in range(1, width - 1)
+            for y in range(1, height - 1)
+        }
+        maze_cells = [
+            (x, y)
+            for x in range(1, width - 1, 2)
+            for y in range(1, height - 1, 2)
+        ]
+        if start not in maze_cells:
+            return set()
+
+        visited = {start}
+        stack = [start]
+        cells.discard(start)
+
+        while stack:
+            x, y = stack[-1]
+            neighbors = []
+            for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2)):
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in maze_cells and (nx, ny) not in visited:
+                    neighbors.append((nx, ny, dx, dy))
+            if not neighbors:
+                stack.pop()
+                continue
+
+            nx, ny, dx, dy = neighbors[rng.randint(0, len(neighbors))]
+            cells.discard((x + dx // 2, y + dy // 2))
+            cells.discard((nx, ny))
+            visited.add((nx, ny))
+            stack.append((nx, ny))
+
+        # Connect the far corner to the odd-cell maze.
+        if rng.rand() < 0.5:
+            connector = (width - 2, height - 3)
+        else:
+            connector = (width - 3, height - 2)
+        cells.discard(connector)
+        cells.discard(goal)
+
+        if self._is_solvable(cells, start, goal, width, height):
+            return cells
+        return set()
+
     def _gen_grid(self, width, height):
         # Use a per-environment RNG seeded by the environment seed and the
         # number of layouts generated so far.
@@ -214,6 +294,18 @@ class EmptyEnv(MiniGridEnv):
                 rng, width, height, self.num_blocks, goal
             )
             for x, y in blocks:
+                self.grid.set(x, y, Wall())
+
+        elif self.blocked == 8:
+            # 2x2 rooms connected by one gap in each interior wall.
+            goal = (width - 2, height - 2)
+            for x, y in self._rooms_cells(rng, width, height, goal):
+                self.grid.set(x, y, Wall())
+
+        elif self.blocked == 9:
+            # Small 1-cell-corridor maze with a reachable goal.
+            goal = (width - 2, height - 2)
+            for x, y in self._maze_cells(rng, width, height):
                 self.grid.set(x, y, Wall())
 
         # Place a goal square in the bottom-right corner
